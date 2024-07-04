@@ -1,9 +1,17 @@
 const express = require('express');
-const axios = require('axios');
 const mongoose = require('mongoose');
 const app = express();
-const port = 3000;
+const PORT = 3000;
 require("dotenv").config();
+const cors = require('cors');
+
+app.use(
+    cors({
+        origin: "*",
+    })
+);
+
+
 
 
 mongoose
@@ -15,51 +23,47 @@ mongoose
     .catch((err) => console.log(err));
 
 
-const tickerSchema = new mongoose.Schema({
+const TickerSchema = new mongoose.Schema({
     name: String,
     last: Number,
     buy: Number,
     sell: Number,
     volume: Number,
-    base_unit: String
+    base_unit: String,
 });
 
-const Ticker = mongoose.model('Ticker', tickerSchema);
+const Ticker = mongoose.model('Ticker', TickerSchema);
 
-// Fetch data from API and store in the database
-app.get('/fetch-data', async (req, res) => {
-    try {
-        const response = await axios.get('https://api.wazirx.com/api/v2/tickers');
-        const data = Object.values(response.data).slice(0, 10);
+// Fetch data from API and store in MongoDB
+async function fetchAndStoreData() {
+    const response = await fetch('https://api.wazirx.com/api/v2/tickers');
+    const data = await response.json();
+    const tickers = Object.values(data).slice(0, 10); // Get top 10 results
 
-        await Ticker.deleteMany({});
-        await Ticker.insertMany(data.map(item => ({
-            name: item.name,
-            last: item.last,
-            buy: item.buy,
-            sell: item.sell,
-            volume: item.volume,
-            base_unit: item.base_unit
-        })));
+    await Ticker.deleteMany({}); // Clear existing data
 
-        res.send('Data fetched and stored in the database');
-    } catch (error) {
-        console.error(error);
-        res.status(500).send('Error fetching data');
-    }
-});
+    tickers.forEach(async (ticker) => {
+        const newTicker = new Ticker({
+            name: ticker.name,
+            last: ticker.last,
+            buy: ticker.buy,
+            sell: ticker.sell,
+            volume: ticker.volume,
+            base_unit: ticker.base_unit,
+        });
+        await newTicker.save();
+    });
+}
 
-// Get stored data from the database
+// Route to get data
 app.get('/data', async (req, res) => {
-    try {
-        const tickers = await Ticker.find({});
-        res.json(tickers);
-    } catch (error) {
-        console.error(error);
-        res.status(500).send('Error fetching data from the database');
-    }
+    const tickers = await Ticker.find();
+    res.json(tickers);
 });
 
-app.listen(port, () => {
-    console.log(`Server running at http://localhost:${port}`);
+// Start server and fetch data initially
+app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+    fetchAndStoreData(); // Fetch data initially
+    setInterval(fetchAndStoreData, 60000); // Fetch data every minute
 });
